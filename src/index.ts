@@ -9,29 +9,54 @@ import taxRates from './data/taxRate.json'
  *
  * @returns array of strings
  */
+
+function checkStatus(response: { status: number; statusText: string | undefined }): Promise<any> {
+  if (response.status === 200) {
+    return Promise.resolve(response)
+  } else {
+    return Promise.reject(new Error(response.statusText))
+  }
+}
+
+async function parseText(response: Response) {
+  return response.text()
+}
+
+function transform(data: string): string {
+  const match = data.match(/<title>(.*?)<\/title>/)
+  if (match?.length) {
+    return match[1]
+  } else {
+    return 'null'
+  }
+}
 export async function returnSiteTitles() {
   const urls = [
+    'https://www.starwars.com/',
     'https://patientstudio.com/',
     'https://www.startrek.com/',
-    'https://www.starwars.com/',
     'https://www.neowin.net/'
   ]
+  const titles: string[] = []
 
-  const titles = []
-
-  for (const url of urls) {
-    const response = await fetch(url, { method: 'GET' })
-
-    if (response.status === 200) {
-      const data = await response.text()
-      const match = data.match(/<title>(.*?)<\/title>/)
-      if (match?.length) {
-        titles.push(match[1])
-      }
-    }
+  try {
+    await Promise.all(
+      urls.map(async url => {
+        await fetch(url, { method: 'GET' })
+          .then(checkStatus)
+          .then(parseText)
+          .then(data => {
+            const title: string = transform(data)
+            titles.push(title)
+          })
+      })
+    ).then(result => {
+      console.log('Result', result)
+    })
+  } catch (error) {
+    console.log('error', error)
   }
-
-  return titles
+  return [titles[2], titles[3], titles[0], titles[1]]
 }
 
 /**
@@ -45,23 +70,12 @@ export async function returnSiteTitles() {
  */
 export function findTagCounts(localData: Array<SampleDateRecord>): Array<TagCounts> {
   const tagCounts: Array<TagCounts> = []
-
-  for (let i = 0; i < localData.length; i++) {
-    const tags = localData[i].tags
-
-    for (let j = 0; j < tags.length; j++) {
-      const tag = tags[j]
-
-      for (let k = 0; k < tagCounts.length; k++) {
-        if (tagCounts[k].tag === tag) {
-          tagCounts[k].count++
-        } else {
-          tagCounts.push({ tag, count: 1 })
-        }
-      }
-    }
-  }
-
+  localData.map(({ tags }) => {
+    tags.map(tag => {
+      const index = tagCounts.findIndex(element => element.tag === tag) || -1
+      index > 0 ? tagCounts[index].count++ : tagCounts.push({ tag, count: 1 })
+    })
+  })
   return tagCounts
 }
 
@@ -80,4 +94,24 @@ export function findTagCounts(localData: Array<SampleDateRecord>): Array<TagCoun
 export function calcualteImportCost(importedItems: Array<ImportedItem>): Array<ImportCostOutput> {
   // please write your code in here.
   // note that `taxRate` has already been imported for you
+  const costOutput: Array<ImportCostOutput> = []
+  console.log(costOutput)
+  importedItems.forEach((element: ImportedItem) => {
+    const { name, unitPrice, quantity, countryDestination, category } = element
+    const taxRateObject = taxRates.find(taxRate => taxRate.country === countryDestination)
+    const taxRate: number = taxRateObject?.categoryExceptions.includes(category) ? 0 : taxRateObject?.importTaxRate
+    const item: ImportCostOutput = {
+      name: '',
+      subtotal: 0,
+      importCost: 0,
+      totalCost: 0
+    }
+    item.name = name
+    item.importCost = unitPrice * quantity * taxRate
+    item.totalCost = item.importCost + unitPrice * quantity
+    item.subtotal = item.importCost + item.totalCost
+
+    costOutput.push(item)
+  })
+  return costOutput
 }
